@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JSONL Data Viewer</title>
+    <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --text-color: #e0e0e0;
+            --border-color: #444;
+            --card-bg: #2a2a2a;
+            --drop-zone-bg: #222;
+            --drop-zone-border: #555;
+            --drop-zone-hover-bg: #333;
+            --true-color: #28a745;
+            --false-color: #dc3545;
+            --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: var(--font-family);
+            margin: 0;
+            padding: 2rem;
+            font-size: 16px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #ccc;
+            font-weight: 300;
+        }
+
+        #drop-zone {
+            border: 2px dashed var(--drop-zone-border);
+            border-radius: 8px;
+            padding: 50px;
+            text-align: center;
+            cursor: pointer;
+            background-color: var(--drop-zone-bg);
+            transition: background-color 0.3s ease;
+            margin-bottom: 2rem;
+        }
+
+        #drop-zone.dragover {
+            background-color: var(--drop-zone-hover-bg);
+            border-color: var(--text-color);
+        }
+
+        #stats {
+            display: flex;
+            justify-content: space-around;
+            background-color: var(--card-bg);
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+            border: 1px solid var(--border-color);
+        }
+
+        #stats div {
+            text-align: center;
+        }
+        
+        #stats .stat-label {
+            font-size: 0.9em;
+            color: #aaa;
+        }
+        
+        #stats .stat-value {
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+
+        .results-container {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .pair-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            background-color: var(--card-bg);
+            padding: 1rem;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .instruction, .completion {
+            padding: 1rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            white-space: pre-wrap; /* Preserves formatting */
+            word-wrap: break-word;
+        }
+
+        .instruction {
+            background-color: #333;
+            border: 1px solid #555;
+        }
+        
+        .completions-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .completion {
+            position: relative;
+            padding-top: 2rem;
+        }
+
+        .completion::before {
+            content: attr(data-label);
+            position: absolute;
+            top: 0;
+            left: 0;
+            padding: 0.25rem 0.75rem;
+            font-size: 0.8rem;
+            font-weight: bold;
+            border-radius: 6px 0 6px 0;
+            text-transform: uppercase;
+        }
+
+        .label-true {
+            border: 1px solid var(--true-color);
+            background-color: rgba(40, 167, 69, 0.1);
+        }
+
+        .label-true::before {
+            background-color: var(--true-color);
+            color: white;
+        }
+
+        .label-false {
+            border: 1px solid var(--false-color);
+            background-color: rgba(220, 53, 69, 0.1);
+        }
+
+        .label-false::before {
+            background-color: var(--false-color);
+            color: white;
+        }
+        
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>JSONL Instruction-Completion Viewer</h1>
+
+    <div id="drop-zone">
+        <p>Drag & Drop your JSONL file here</p>
+    </div>
+
+    <div id="stats" class="hidden">
+        <div>
+            <div class="stat-label">Label Ratio</div>
+            <div id="ratio-stat" class="stat-value"></div>
+        </div>
+        <div>
+            <div class="stat-label">Pairing</div>
+            <div id="pairing-stat" class="stat-value"></div>
+        </div>
+    </div>
+
+    <div id="results-container" class="results-container"></div>
+
+    <script>
+        const dropZone = document.getElementById('drop-zone');
+        const resultsContainer = document.getElementById('results-container');
+        const statsContainer = document.getElementById('stats');
+        const ratioStat = document.getElementById('ratio-stat');
+        const pairingStat = document.getElementById('pairing-stat');
+
+        // --- Drag and Drop Event Handlers ---
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+
+            const file = e.dataTransfer.files[0];
+            if (file && file.name.endsWith('.jsonl')) {
+                const reader = new FileReader();
+                reader.onload = (event) => processData(event.target.result);
+                reader.readAsText(file);
+            } else {
+                alert('Please drop a valid .jsonl file.');
+            }
+        });
+
+        // --- Data Processing and Rendering ---
+        function processData(fileContent) {
+            try {
+                // 1. Parse JSONL
+                const lines = fileContent.trim().split('\n');
+                const data = lines.map(line => JSON.parse(line));
+                
+                // 2. Group by instruction
+                const groupedData = new Map();
+                data.forEach(item => {
+                    const key = item.instruction.trim();
+                    if (!groupedData.has(key)) {
+                        groupedData.set(key, []);
+                    }
+                    groupedData.get(key).push({
+                        completion: item.completion,
+                        label: item.label
+                    });
+                });
+                
+                // 3. Calculate statistics
+                calculateAndDisplayStats(data, groupedData);
+                
+                // 4. Render the results
+                renderResults(groupedData);
+
+            } catch (error) {
+                alert('Failed to parse JSONL file. Please check the file format.');
+                console.error(error);
+            }
+        }
+        
+        function calculateAndDisplayStats(allData, groupedData) {
+            const trueCount = allData.filter(d => d.label === true).length;
+            const falseCount = allData.length - trueCount;
+
+            // Update Label Ratio
+            ratioStat.textContent = `✅ True: ${trueCount} / ❌ False: ${falseCount}`;
+            
+            // Check for pairs
+            let unpairedTrueGroups = 0;
+            groupedData.forEach((completions) => {
+                const hasTrue = completions.some(c => c.label === true);
+                const hasFalse = completions.some(c => c.label === false);
+                if (hasTrue && !hasFalse) {
+                    unpairedTrueGroups++;
+                }
+            });
+
+            // Update Pairing Info
+            if (unpairedTrueGroups === 0) {
+                pairingStat.textContent = "All 'true' samples are paired.";
+                pairingStat.style.color = 'var(--true-color)';
+            } else {
+                pairingStat.textContent = `${unpairedTrueGroups} 'true' sample(s) have no 'false' pair.`;
+                pairingStat.style.color = 'var(--false-color)';
+            }
+
+            statsContainer.classList.remove('hidden');
+        }
+
+        function renderResults(groupedData) {
+            resultsContainer.innerHTML = ''; // Clear previous results
+            
+            groupedData.forEach((completions, instruction) => {
+                // Main container for the pair (instruction + completions)
+                const pairContainer = document.createElement('div');
+                pairContainer.className = 'pair-container';
+                
+                // Left side: Instruction
+                const instructionElem = document.createElement('pre');
+                instructionElem.className = 'instruction';
+                instructionElem.textContent = instruction;
+                
+                // Right side: Wrapper for all completions
+                const completionsWrapper = document.createElement('div');
+                completionsWrapper.className = 'completions-wrapper';
+                
+                // Sort completions to show true ones first
+                completions.sort((a, b) => (a.label === b.label) ? 0 : a.label ? -1 : 1);
+                
+                completions.forEach(comp => {
+                    const completionElem = document.createElement('pre');
+                    completionElem.className = `completion ${comp.label ? 'label-true' : 'label-false'}`;
+                    completionElem.textContent = comp.completion;
+                    completionElem.setAttribute('data-label', comp.label ? 'Label: True' : 'Label: False');
+                    completionsWrapper.appendChild(completionElem);
+                });
+                
+                pairContainer.appendChild(instructionElem);
+                pairContainer.appendChild(completionsWrapper);
+                resultsContainer.appendChild(pairContainer);
+            });
+        }
+    </script>
+</body>
+</html>
