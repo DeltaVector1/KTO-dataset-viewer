@@ -13,3 +13,5 @@ Small zero-dependency, self-contained dataset viewer for KTO datasets in the Axo
 - Flags any True sample lacking a paired False sample.
 
 I might flesh it out more in the future, Maybe a CLI version? Dunno. 
+
+Format can be seen here: https://huggingface.co/datasets/Delta-Vector/Tauri-Helpsteer3-Edit
