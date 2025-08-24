@@ -2,7 +2,7 @@
 
 Small zero-dependency, self-contained dataset viewer for KTO datasets in the Axolotl Argilla format, Just needed smth basic.
 
-1. Open `index.html` in any browser.  
+1. Open `index.html` in any browser. / or open https://deltavector1.github.io/KTO-dataset-viewer/ (Hosted on GH pages)
 2. Drop your `.jsonl` file onto the dashed zone.  
 3. Instantly see:
    - Each instruction with its completions side-by-side.  
